@@ -1,23 +1,24 @@
 substitutions:
   _SERVICE_NAME: CHaNGE_ME
-  _REGION: terraform_managed
+  _REGION: multivac_managed
   _BUILD_FOLDER: .
-  _ARTIFACT_REGISTRY_REPO_URL: terraform_managed
-  _PROJECT_ID: terraform_managed
+  _ARTIFACT_REGISTRY_REPO_URL: multivac_managed
+  _PROJECT_ID: multivac_managed
   _FIREBASE_BUCKET: '${_PROJECT_ID}.firebasestorage.app'
-  _CONFIG_BUCKET: terraform_managed
-  _EVALS_URL: terraform_managed
-  _PUBLIC_BUCKET: sunholo-public-podcasts
+  _CONFIG_BUCKET: multivac_managed
+  _EVALS_URL: multivac_managed
+  _PUBLIC_BUCKET: your-public-bucket
 
 tags: ['${_PROJECT_ID}', '${_SERVICE_NAME}']
 
-options:
-  logging: GCS_ONLY
+#options:
+  #logging: GCS_ONLY
   #logging: CLOUD_LOGGING_ONLY
-logsBucket: gs://multivac-deploy-logging-bucket
+#logsBucket: gs://multivac-deploy-logging-bucket
 
 
 steps:
+  # create your own firebase image if not on multivac
   - name: '${_ARTIFACT_REGISTRY_REPO_URL}/sunholo-llmops/firebase:${BRANCH_NAME}'
     waitFor: ['-']
     dir: '${_BUILD_FOLDER}'

@@ -180,7 +180,7 @@ cd backend && uv run pytest
 
 The included `cloudbuild.yaml` configures Google Cloud Build for automated deployment to Cloud Run.
 
-### Prerequisites
+### Prerequisites (if not running on [Sunholo Multivac](https://www.sunholo.com/))
 1. Enable required Google Cloud APIs
 2. Create service account with proper permissions
 3. Set up Firebase project
