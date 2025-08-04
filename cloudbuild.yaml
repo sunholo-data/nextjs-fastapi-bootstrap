@@ -1,0 +1,240 @@
+substitutions:
+  _SERVICE_NAME: CHaNGE_ME
+  _REGION: terraform_managed
+  _BUILD_FOLDER: .
+  _ARTIFACT_REGISTRY_REPO_URL: terraform_managed
+  _PROJECT_ID: terraform_managed
+  _FIREBASE_BUCKET: '${_PROJECT_ID}.firebasestorage.app'
+  _CONFIG_BUCKET: terraform_managed
+  _EVALS_URL: terraform_managed
+  _PUBLIC_BUCKET: sunholo-public-podcasts
+
+tags: ['${_PROJECT_ID}', '${_SERVICE_NAME}']
+
+options:
+  logging: GCS_ONLY
+  #logging: CLOUD_LOGGING_ONLY
+logsBucket: gs://multivac-deploy-logging-bucket
+
+
+steps:
+  - name: '${_ARTIFACT_REGISTRY_REPO_URL}/sunholo-llmops/firebase:${BRANCH_NAME}'
+    waitFor: ['-']
+    dir: '${_BUILD_FOLDER}'
+    id: 'deploy-firebase-rules'
+    entrypoint: bash
+    args: 
+      - '-c'
+      - |
+        ls -la
+        pwd
+        firebase --version
+        firebase -P ${_PROJECT_ID} --json deploy --only firestore:rules,firestore:indexes --force 
+
+  # Install dependencies and run backend tests
+  - name: 'python:3.11-slim'
+    id: 'test-backend'
+    dir: 'backend'
+    entrypoint: 'bash'
+    waitFor: ['-']
+    args:
+      - '-c'
+      - |
+        apt-get update && apt-get install -y curl
+        curl -LsSf https://astral.sh/uv/install.sh | sh
+        export PATH="/builder/home/.local/bin:$$PATH"
+        # Set environment variables for tests
+        export FIREBASE_PROJECT_ID=${_PROJECT_ID}
+        export FIRESTORE_DATABASE_ID=(default)  # Use default database for tests
+        export USE_APPLICATION_DEFAULT_CREDENTIALS=true
+        uv sync
+        uv run pytest --tb=short || exit 1
+        uv run black --check app || exit 1
+        uv run isort --check-only app || exit 1
+
+  # Install dependencies and run frontend tests
+  - name: 'node:18'
+    id: 'test-frontend'
+    dir: 'frontend'
+    entrypoint: 'bash'
+    waitFor: ['-']
+    args:
+      - '-c'
+      - |
+        npm ci
+        npm run type-check
+        npm run lint
+        npm run test
+
+  # Build frontend
+  - name: 'node:18'
+    id: 'build-frontend'
+    dir: 'frontend'
+    waitFor: ['test-frontend']
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        # Set backend URL for Next.js proxy
+        export NEXT_PUBLIC_BACKEND_URL=http://127.0.0.1:8000
+        npm run build
+        
+  # Create frontend Dockerfile
+  - name: 'gcr.io/cloud-builders/docker'
+    id: 'create-frontend-dockerfile'
+    dir: 'frontend'
+    waitFor: ['build-frontend']
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        cat > Dockerfile <<EOF
+        FROM node:18-alpine AS base
+        
+        # Install dependencies only when needed
+        FROM base AS deps
+        RUN apk add --no-cache libc6-compat
+        WORKDIR /app
+        
+        # Install dependencies based on the preferred package manager
+        COPY package.json package-lock.json* ./
+        RUN npm ci
+        
+        # Rebuild the source code only when needed
+        FROM base AS builder
+        WORKDIR /app
+        COPY --from=deps /app/node_modules ./node_modules
+        COPY . .
+        
+        # Set environment variables for build
+        ENV NEXT_PUBLIC_BACKEND_URL=http://127.0.0.1:8000
+        RUN npm run build
+        
+        # Production image, copy all the files and run next
+        FROM base AS runner
+        WORKDIR /app
+        
+        ENV NODE_ENV=production
+        ENV NEXT_PUBLIC_BACKEND_URL=http://127.0.0.1:8000
+        
+        RUN addgroup --system --gid 1001 nodejs
+        RUN adduser --system --uid 1001 nextjs
+        
+        COPY --from=builder /app/public ./public
+        
+        # Set the correct permission for prerender cache
+        RUN mkdir .next
+        RUN chown nextjs:nodejs .next
+        
+        # Automatically leverage output traces to reduce image size
+        COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
+        COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
+        
+        USER nextjs
+        
+        EXPOSE 8080
+        
+        ENV PORT=8080
+        
+        # server.js is created by next build from the standalone output
+        CMD ["node", "server.js"]
+        EOF
+
+  # Build frontend Docker image
+  - name: 'gcr.io/cloud-builders/docker'
+    id: 'docker-build-frontend'
+    dir: 'frontend'
+    waitFor: ['create-frontend-dockerfile']
+    args: ['build', '-t', '${_ARTIFACT_REGISTRY_REPO_URL}/${_SERVICE_NAME}-frontend:${SHORT_SHA}', '.']
+
+  # Create backend Dockerfile
+  - name: 'gcr.io/cloud-builders/docker'
+    id: 'create-backend-dockerfile'
+    dir: 'backend'
+    waitFor: ['test-backend']
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        cat > Dockerfile <<EOF
+        FROM python:3.11-slim
+        
+        # Install uv
+        RUN apt-get update && apt-get install -y curl && \
+            curl -LsSf https://astral.sh/uv/install.sh | sh && \
+            apt-get clean && rm -rf /var/lib/apt/lists/*
+        
+        ENV PATH="/root/.local/bin:$$PATH"
+        
+        WORKDIR /app
+        
+        # Copy project files
+        COPY pyproject.toml uv.lock ./
+        COPY main.py ./
+        COPY app ./app
+        COPY tests ./tests
+        
+        # Install dependencies
+        RUN uv sync --frozen
+        
+        # Environment variables
+        ENV PORT=8000
+        ENV GOOGLE_CLOUD_PROJECT=${_PROJECT_ID}
+        
+        EXPOSE 8000
+        
+        CMD ["uv", "run", "gunicorn", "main:app", "-w", "4", "-k", "uvicorn.workers.UvicornWorker", "--bind", "0.0.0.0:8000", "--timeout", "0", "--log-level", "info", "--access-logfile", "-", "--error-logfile", "-"]
+        
+        EOF
+
+  # Build backend Docker image
+  - name: 'gcr.io/cloud-builders/docker'
+    id: 'docker-build-backend'
+    dir: 'backend'
+    waitFor: ['create-backend-dockerfile']
+    args: ['build', '-t', '${_ARTIFACT_REGISTRY_REPO_URL}/${_SERVICE_NAME}-backend:${SHORT_SHA}', '.']
+
+  # Push images to Artifact Registry
+  - name: 'gcr.io/cloud-builders/docker'
+    id: 'push-frontend'
+    waitFor: ['docker-build-frontend']
+    args: ['push', '${_ARTIFACT_REGISTRY_REPO_URL}/${_SERVICE_NAME}-frontend:${SHORT_SHA}']
+
+  - name: 'gcr.io/cloud-builders/docker'
+    id: 'push-backend'
+    waitFor: ['docker-build-backend']
+    args: ['push', '${_ARTIFACT_REGISTRY_REPO_URL}/${_SERVICE_NAME}-backend:${SHORT_SHA}']
+
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    id: 'deploy-multi-cloud-run'
+    waitFor: ['push-frontend', 'push-backend']
+    entrypoint: 'gcloud'
+    args:
+      - 'run'
+      - 'deploy'
+      - '${_SERVICE_NAME}'
+      - '--region=${_REGION}'
+      - '--project=${_PROJECT_ID}'
+      - '--platform=managed'
+      - '--allow-unauthenticated'
+      - '--max-instances=3'
+      - '--session-affinity'
+      # Frontend container (main container with exposed port)
+      - '--container=main'
+      - '--image=${_ARTIFACT_REGISTRY_REPO_URL}/${_SERVICE_NAME}-frontend:${SHORT_SHA}'
+      - '--port=8080'
+      - '--cpu=1'
+      - '--memory=512Mi'
+      # Backend container (sidecar)
+      - '--container=sidecar'
+      - '--image=${_ARTIFACT_REGISTRY_REPO_URL}/${_SERVICE_NAME}-backend:${SHORT_SHA}'
+      - '--cpu=2'
+      - '--memory=2Gi'
+      - '--set-env-vars=FIREBASE_PROJECT_ID=${_PROJECT_ID}'
+      - '--set-env-vars=FIRESTORE_DATABASE_ID=(default)'
+      - '--set-env-vars=PORT=8000'
+
+
+images:
+  - '${_ARTIFACT_REGISTRY_REPO_URL}/${_SERVICE_NAME}-frontend:${SHORT_SHA}'
+  - '${_ARTIFACT_REGISTRY_REPO_URL}/${_SERVICE_NAME}-backend:${SHORT_SHA}'

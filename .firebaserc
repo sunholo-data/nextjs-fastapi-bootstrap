@@ -1,0 +1,15 @@
+{
+  "projects": {
+    "default": "multivac-internal-dev"
+  },
+  "targets": {
+    "multivac-internal-dev": {
+      "hosting": {
+        "tagassistant": [
+          "tagassistant"
+        ]
+      }
+    }
+  },
+  "etags": {}
+}

@@ -1,0 +1,41 @@
+[project]
+name = "tagassistant-backend"
+version = "0.1.0"
+description = "TagAssistant.ai Backend API"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.34.0",
+    "gunicorn>=21.2.0",
+    "python-dotenv==1.0.1",
+    "pydantic[email]>=2.8.0",
+    "pydantic-settings>=2.6.1",
+    "httpx>=0.28.1",
+    "beautifulsoup4==4.12.3",
+    "requests>=2.32.4",
+    "mailgun3",
+    "pytest==8.0.2",
+    "pytest-asyncio==0.23.5",
+    "black==24.2.0",
+    "isort==5.13.2",
+    "mypy==1.8.0",
+    "mcp>=1.0.0",
+    "google-adk>=1.8.0",
+    "google-generativeai>=0.7.0",
+    "firebase-admin>=6.6.0",
+]
+
+[tool.black]
+line-length = 88
+target-version = ['py311']
+include = '\.pyi?$'
+
+[tool.isort]
+profile = "black"
+line_length = 88
+
+[tool.mypy]
+python_version = "3.11"
+warn_return_any = true
+warn_unused_configs = true
+ignore_missing_imports = true

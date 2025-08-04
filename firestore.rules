@@ -1,0 +1,25 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Waitlist collection - allow read/write for now (consider restricting in production)
+    match /waitlist/{email} {
+      allow read, write: if true;
+    }
+    
+    // Health check collection - allow read/write for monitoring
+    match /_health_check/{document} {
+      allow read, write: if true;
+    }
+    
+    // Connection test collection - allow read/write for testing
+    match /_connection_test/{document} {
+      allow read, write: if true;
+    }
+    
+    // Default rule - deny all other access
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
