@@ -6,6 +6,60 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 This is a full-stack web application template using Next.js (React) for the frontend and FastAPI (Python) for the backend. It includes Firebase/Firestore integration, email capabilities via Mailgun, and a working waitlist example to demonstrate the architecture.
 
+## First-Time Setup Guide
+
+When a user asks you to "set up this project" or similar, follow these steps:
+
+1. **Install Backend Dependencies:**
+   ```bash
+   cd backend
+   uv sync
+   ```
+
+2. **Install Frontend Dependencies:**
+   ```bash
+   cd frontend
+   npm install
+   ```
+
+3. **Set up Environment Variables:**
+   ```bash
+   # Copy example files
+   cp backend/.env.example backend/.env
+   cp frontend/.env.example frontend/.env
+   ```
+   Then help them configure:
+   - FIREBASE_PROJECT_ID (their GCP project ID)
+   - Other optional services as needed
+
+4. **Firebase Setup:**
+   - Guide them to set up a Firebase project at console.firebase.google.com
+   - Help them enable Firestore
+   - Ensure they have `gcloud auth application-default login` for local development
+
+5. **Start Development Servers:**
+   ```bash
+   # Terminal 1 - Backend
+   cd backend && uv run uvicorn main:app --reload
+   
+   # Terminal 2 - Frontend  
+   cd frontend && npm run dev
+   ```
+
+6. **Verify Setup:**
+   - Check http://localhost:3000 (frontend)
+   - Check http://localhost:8000/health (backend)
+   - Test the waitlist form
+
+## Quick Commands Reference
+
+For common user requests:
+
+- **"Run tests"**: `cd backend && uv run pytest && cd ../frontend && npm test`
+- **"Check linting"**: `cd backend && uv run black . --check && uv run mypy . && cd ../frontend && npm run lint`
+- **"Start servers"**: Use the commands from step 5 above
+- **"Deploy"**: Guide them through Cloud Build setup with `gcloud builds submit`
+
 ## Development Commands
 
 ### Frontend (Next.js + TypeScript)
@@ -201,5 +255,30 @@ To adapt this template for your project:
    - Set up Firebase project
    - Configure Mailgun (if using email)
    - Set up Google OAuth (if using)
+
+## Helpful Prompts for Users
+
+Suggest these prompts to users:
+
+### Getting Started
+- "Set up this project for local development"
+- "Help me understand the project structure"
+- "Run all tests and fix any issues"
+
+### Development
+- "Create a new API endpoint for [feature]"
+- "Add a new page for [feature]"
+- "Help me add authentication"
+- "Create a new Firestore collection for [data]"
+
+### Deployment
+- "Help me deploy to Google Cloud Run"
+- "Set up CI/CD with GitHub Actions"
+- "Configure production environment variables"
+
+### Debugging
+- "Debug why [specific issue] is happening"
+- "Fix the TypeScript errors"
+- "Help me troubleshoot the Firebase connection"
 
 Remember: This is a starting template. Modify it to fit your specific needs!
